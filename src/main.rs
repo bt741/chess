@@ -127,7 +127,7 @@ impl Piece {
             PieceType::HORSE => 3,
             PieceType::BISHOP => 3,
             PieceType::QUEEN => 9,
-            PieceType::KING => 100,
+            PieceType::KING => 1000,
         }
     }
 
@@ -141,14 +141,47 @@ impl Piece {
 
         match self.piece_type {
             PieceType::PAWN => {
-                let max_ver = match self.is_virgin_status {
-                    true => 3,
-                    false => 2,
+                let new_ver = match self.color {
+                    Color::WHITE => current_ver + 1,
+                    Color::BLACK => {
+                        if current_ver == 0 {
+                            return output;
+                        }
+                        current_ver - 1
+                    }
                 };
 
-                for ver_extra in 1..max_ver {
+                for i in -1isize..2 {
+                    let hor: isize = current_hor as isize + i;
+                    let mut is_ok: bool = true;
+                    if valid_pos(hor, new_ver as isize) {
+                        if i != 0 {
+                            if !board.is_enemy(hor as usize, new_ver, self.color) {
+                                is_ok = false;
+                            }
+                        } else {
+                            if board.is_occupied(hor as usize, new_ver) {
+                                is_ok = false;
+                            }
+                        }
+                    }
+
+                    if is_ok {
+                        process_move(
+                            &mut board,
+                            &mut output,
+                            current_hor,
+                            current_ver,
+                            hor,
+                            new_ver as isize,
+                            self.color,
+                        );
+                    }
+                }
+
+                if self.is_virgin_status {
                     let new_ver = match self.color {
-                        Color::WHITE => current_ver + ver_extra,
+                        Color::WHITE => current_ver + 2,
                         Color::BLACK => {
                             if current_ver == 0 {
                                 return output;
@@ -157,32 +190,16 @@ impl Piece {
                         }
                     };
 
-                    for i in -1isize..2 {
-                        let hor: isize = current_hor as isize + i;
-                        let mut is_ok: bool = true;
-                        if valid_pos(hor, new_ver as isize) {
-                            if i != 0 {
-                                if !board.is_enemy(hor as usize, new_ver, self.color) {
-                                    is_ok = false;
-                                }
-                            } else {
-                                if board.is_occupied(hor as usize, new_ver) {
-                                    is_ok = false;
-                                }
-                            }
-                        }
-
-                        if is_ok {
-                            process_move(
-                                &mut board,
-                                &mut output,
-                                current_hor,
-                                current_ver,
-                                hor,
-                                new_ver as isize,
-                                self.color,
-                            );
-                        }
+                    if !board.is_occupied(current_hor as usize, new_ver) {
+                        process_move(
+                            &mut board,
+                            &mut output,
+                            current_hor,
+                            current_ver,
+                            current_hor as isize,
+                            new_ver as isize,
+                            self.color,
+                        );
                     }
                 }
             }
@@ -287,12 +304,29 @@ impl Piece {
                 }
             }
             PieceType::HORSE => {
-                let mut new_board = *board;
-                new_board.switch();
-                new_board.increment_turn();
-                output.push(new_board);
+                for i in [-2, 2] {
+                    for j in [-1, 1] {
+                        process_move(
+                            &mut board,
+                            &mut output,
+                            current_hor,
+                            current_ver,
+                            current_hor as isize + i,
+                            current_ver as isize + j,
+                            self.color,
+                        );
+                        process_move(
+                            &mut board,
+                            &mut output,
+                            current_hor,
+                            current_ver,
+                            current_hor as isize + j,
+                            current_ver as isize + i,
+                            self.color,
+                        );                         
+                    } 
+                }
             }
-            _ => {}
         }
 
         output
@@ -475,29 +509,31 @@ fn main() {
     let mut board = BoardState::new(Color::WHITE);
     let piece_types = [
         PieceType::TOWER,
-        // PieceType::HORSE,
+        PieceType::HORSE,
         PieceType::BISHOP,
         PieceType::QUEEN,
         PieceType::KING,
         PieceType::BISHOP,
-        // PieceType::HORSE,
+        PieceType::HORSE,
         PieceType::TOWER,
     ];
 
     // White pieces
-    for i in 0..1 {
-        // board.add_piece(i, 0, Piece::new(piece_types[i], Color::WHITE));
+    for i in 0..8 {
+        board.add_piece(i, 0, Piece::new(piece_types[i], Color::WHITE));
         board.add_piece(i, 1, Piece::new(PieceType::PAWN, Color::WHITE));
     }
 
     // Black pieces
-    for i in 0..1 {
-        // board.add_piece(i, 7, Piece::new(piece_types[i], Color::BLACK));
+    for i in 0..8 {
+        board.add_piece(i, 7, Piece::new(piece_types[i], Color::BLACK));
         board.add_piece(i, 6, Piece::new(PieceType::PAWN, Color::BLACK));
     }
+    
+    board.add_piece(3, 4, Piece::new(PieceType::HORSE, Color::WHITE));
 
     let mut current = board;
-    for _ in 0..99 {
+    for _ in 0..999 {
         let mut moves = current.generate_moves();
         println!("{}", current);
 
