@@ -143,12 +143,7 @@ impl Piece {
             PieceType::PAWN => {
                 let new_ver = match self.color {
                     Color::WHITE => current_ver + 1,
-                    Color::BLACK => {
-                        if current_ver == 0 {
-                            return output;
-                        }
-                        current_ver - 1
-                    }
+                    Color::BLACK => current_ver - 1,
                 };
 
                 for i in -1isize..2 {
@@ -180,24 +175,19 @@ impl Piece {
                 }
 
                 if self.is_virgin_status {
-                    let new_ver = match self.color {
-                        Color::WHITE => current_ver + 2,
-                        Color::BLACK => {
-                            if current_ver == 0 {
-                                return output;
-                            }
-                            current_ver - 1
-                        }
+                    let new_ver: isize = match self.color {
+                        Color::WHITE => { current_ver as isize + 2 }
+                        Color::BLACK => { current_ver as isize - 2 }
                     };
 
-                    if !board.is_occupied(current_hor as usize, new_ver) {
+                    if valid_pos(current_hor as isize, new_ver) && !board.is_occupied(current_hor, new_ver as usize) {
                         process_move(
                             &mut board,
                             &mut output,
                             current_hor,
                             current_ver,
                             current_hor as isize,
-                            new_ver as isize,
+                            new_ver,
                             self.color,
                         );
                     }
@@ -331,6 +321,125 @@ impl Piece {
 
         output
     }
+
+    fn is_dangerous(&self, board: &BoardState, current_hor: usize, current_ver: usize, target_hor: usize, target_ver: usize) -> bool {
+        match self.piece_type {
+            PieceType::PAWN => {
+                let new_ver: isize = match self.color {
+                    Color::WHITE => { current_ver as isize + 2 }
+                    Color::BLACK => { current_ver as isize - 2 }
+                };
+
+                for i in [-1, 1] {
+                    let new_hor = current_hor as isize + i;
+                    if valid_pos(new_hor, new_ver) && new_hor as usize == target_hor && new_ver as usize == target_ver {
+                        return true;
+                    }
+                }
+
+                false
+            }
+            PieceType::TOWER => {
+                if current_hor == target_hor {
+                    let min = current_ver.min(target_ver);
+                    let max = current_ver.max(target_ver);
+
+                    for i in min..max {
+                        if board.is_occupied(current_hor, i) {
+                            return false;
+                        }
+                    }
+                } else if current_ver == target_ver {
+                    let min = current_hor.min(target_hor);
+                    let max = current_hor.max(target_hor);
+
+                    for i in min..max {
+                        if board.is_occupied(i, current_ver) {
+                            return false;
+                        }
+                    }
+                }
+
+                true
+            }
+            PieceType::BISHOP => {
+                if (current_ver as isize - target_ver as isize).abs() == (current_hor as isize - target_hor as isize).abs() {
+                    let min_hor = current_hor.min(target_hor);
+                    let max_hor = current_hor.max(target_hor);
+                    let min_ver = current_ver.min(target_ver);
+                    let max_ver = current_ver.max(target_ver);
+
+                    for i in min_hor..max_hor {
+                        for j in min_ver..max_ver {
+                            if board.is_occupied(i, j) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+            PieceType::QUEEN => {
+                if current_hor == target_hor {
+                    let min = current_ver.min(target_ver);
+                    let max = current_ver.max(target_ver);
+
+                    for i in min..max {
+                        if board.is_occupied(current_hor, i) {
+                            return false;
+                        }
+                    }
+                } else if current_ver == target_ver {
+                    let min = current_hor.min(target_hor);
+                    let max = current_hor.max(target_hor);
+
+                    for i in min..max {
+                        if board.is_occupied(i, current_ver) {
+                            return false;
+                        }
+                    }
+                } else if (current_ver as isize - target_ver as isize).abs() as usize == (current_hor as isize - target_hor as isize).abs() as usize {
+                    let min_hor = current_hor.min(target_hor);
+                    let max_hor = current_hor.max(target_hor);
+                    let min_ver = current_ver.min(target_ver);
+                    let max_ver = current_ver.max(target_ver);
+
+                    for i in min_hor..max_hor {
+                        for j in min_ver..max_ver {
+                            if board.is_occupied(i, j) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+            PieceType::HORSE => {
+                for i in [-2, 2] {
+                    for j in [-1, 1] {
+                        let hor = current_hor as isize + i;
+                        let ver = current_ver as isize + j;
+                        if valid_pos(hor, ver) && current_hor == hor as usize && current_ver == ver as usize {
+                            return true;
+                        }
+
+                        let hor = current_hor as isize + j;
+                        let ver = current_ver as isize + i;
+                        if valid_pos(hor, ver) && current_hor == hor as usize && current_ver == ver as usize {
+                            return true;
+                        }
+                    } 
+                }
+                false
+            }
+            PieceType::KING => {
+                if (current_hor as isize - target_hor as isize).abs() <= 1 || (current_ver as isize - target_ver as isize).abs() <= 1 {
+                    return true;
+                }
+                false
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -347,6 +456,10 @@ impl BoardState {
             turn_color,
             turn_number: 0,
         }
+    }
+
+    fn is_king_in_danger(&self) -> bool {
+        true
     }
 
     fn increment_turn(&mut self) {
@@ -443,6 +556,11 @@ impl BoardState {
 
         let mut piece = self.board[from_index].take();
         self.board[to_index] = piece;
+
+        if self.is_king_in_danger() {
+            return Err("King is threatened");
+        }
+
         Ok(())
     }
 
