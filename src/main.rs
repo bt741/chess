@@ -12,7 +12,7 @@ use std::fmt;
     0   T  H  B  Q  K  B  H  T
 */
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum PieceType {
     PAWN,
     TOWER,
@@ -28,12 +28,7 @@ enum Color {
     BLACK,
 }
 
-fn check_break(
-    board: &BoardState,
-    hor: usize,
-    ver: usize,
-    color: Color,
-) -> (bool, bool) {
+fn check_break(board: &BoardState, hor: usize, ver: usize, color: Color) -> (bool, bool) {
     let mut stop_now = false;
     let mut stop_next = false;
 
@@ -52,6 +47,7 @@ fn check_break(
 struct Piece {
     piece_type: PieceType,
     color: Color,
+    is_virgin_status: bool,
 }
 
 #[inline(always)]
@@ -59,27 +55,46 @@ fn valid_pos(hor: isize, ver: isize) -> bool {
     (0..8).contains(&hor) && (0..8).contains(&ver)
 }
 
-fn process_move(board: &BoardState, output: &mut Vec<BoardState>, current_hor: usize, current_ver: usize, hor: isize, ver: isize, color: Color) -> bool {
+fn process_move(
+    board: &mut BoardState,
+    output: &mut Vec<BoardState>,
+    current_hor: usize,
+    current_ver: usize,
+    hor: isize,
+    ver: isize,
+    color: Color,
+) -> bool {
     if valid_pos(hor, ver) {
         let hor = hor as usize;
         let ver = ver as usize;
 
         let mut new_board = *board;
         new_board.switch();
+        new_board.increment_turn();
+
         let (stop_now, stop_next) = check_break(&new_board, hor, ver, color);
 
-        if !stop_now && new_board.move_piece(current_hor, current_ver, hor, ver).is_ok() {
+        if !stop_now
+            && new_board
+                .move_piece(current_hor, current_ver, hor, ver)
+                .is_ok()
+        {
+            new_board.unvirgin(hor, ver);
             output.push(new_board);
         }
-        
+
         return stop_next;
     }
     false
 }
-               
+
 impl Piece {
     fn new(piece_type: PieceType, color: Color) -> Self {
-        Self { piece_type, color }
+        Self {
+            piece_type,
+            color,
+            is_virgin_status: true,
+        }
     }
 
     fn get_symbol(&self) -> char {
@@ -97,6 +112,14 @@ impl Piece {
         self.color
     }
 
+    fn is_virgin(&self) -> bool {
+        self.is_virgin_status
+    }
+
+    fn unvirgin(&mut self) {
+        self.is_virgin_status = false;
+    }
+
     fn get_score(&self) -> isize {
         match self.piece_type {
             PieceType::PAWN => 1,
@@ -110,7 +133,7 @@ impl Piece {
 
     fn generate_moves(
         &self,
-        board: &BoardState,
+        mut board: &mut BoardState,
         current_hor: usize,
         current_ver: usize,
     ) -> Vec<BoardState> {
@@ -118,177 +141,155 @@ impl Piece {
 
         match self.piece_type {
             PieceType::PAWN => {
-                let new_ver = match self.color {
-                    Color::WHITE => current_ver + 1,
-                    Color::BLACK => {
-                        if current_ver == 0 {
-                            return output;
-                        }
-                        current_ver - 1
-                    }
+                let max_ver = match self.is_virgin_status {
+                    true => 3,
+                    false => 2,
                 };
 
-                if new_ver < 8 {
-                    // forward
-                    let mut new_board = *board;
-                    if !new_board.is_occupied(current_hor, new_ver)
-                        && new_board
-                            .move_piece(current_hor, current_ver, current_hor, new_ver)
-                            .is_ok()
-                    {
-                        new_board.switch();
-                        output.push(new_board);
-                    }
-
-                    // capture left
-                    if current_hor > 0 {
-                        let mut new_board = *board;
-                        if new_board.is_enemy(current_hor - 1, new_ver, self.color)
-                            && new_board
-                                .move_piece(current_hor, current_ver, current_hor - 1, new_ver)
-                                .is_ok()
-                        {
-                            new_board.switch();
-                            output.push(new_board);
+                for ver_extra in 1..max_ver {
+                    let new_ver = match self.color {
+                        Color::WHITE => current_ver + ver_extra,
+                        Color::BLACK => {
+                            if current_ver == 0 {
+                                return output;
+                            }
+                            current_ver - 1
                         }
-                    }
+                    };
 
-                    // capture right
-                    if current_hor < 7 {
-                        let mut new_board = *board;
-                        if new_board.is_enemy(current_hor + 1, new_ver, self.color)
-                            && new_board
-                                .move_piece(current_hor, current_ver, current_hor + 1, new_ver)
-                                .is_ok()
-                        {
-                            new_board.switch();
-                            output.push(new_board);
+                    for i in -1isize..2 {
+                        let hor: isize = current_hor as isize + i;
+                        let mut is_ok: bool = true;
+                        if valid_pos(hor, new_ver as isize) {
+                            if i != 0 {
+                                if !board.is_enemy(hor as usize, new_ver, self.color) {
+                                    is_ok = false;
+                                }
+                            } else {
+                                if board.is_occupied(hor as usize, new_ver) {
+                                    is_ok = false;
+                                }
+                            }
+                        }
+
+                        if is_ok {
+                            process_move(
+                                &mut board,
+                                &mut output,
+                                current_hor,
+                                current_ver,
+                                hor,
+                                new_ver as isize,
+                                self.color,
+                            );
                         }
                     }
                 }
             }
             PieceType::TOWER => {
-                let mut stop: bool = false;
-                for i in 1..8 - current_ver {
-                    let mut new_board = *board;
-                    new_board.switch();
-                    let new_ver = current_ver + i;
-                    if new_board.is_occupied(current_hor, new_ver) {
-                        if !new_board.is_enemy(current_hor, new_ver, self.color) {
-                            break;
-                        } else {
-                            stop = true;
+                let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
+
+                for step in 0..8 {
+                    let mut count: usize = 0;
+                    for i in 1isize..2 {
+                        for j in 1isize..2 {
+                            if i != 0 && j != 0 {
+                                continue;
+                            }
+
+                            if !stop[count] {
+                                stop[count] = process_move(
+                                    &mut board,
+                                    &mut output,
+                                    current_hor,
+                                    current_ver,
+                                    current_hor as isize + i * step,
+                                    current_ver as isize + j * step,
+                                    self.color,
+                                );
+                            }
+                            count += 1;
                         }
-                    }
-                    if new_board
-                        .move_piece(current_hor, current_ver, current_hor, new_ver)
-                        .is_ok()
-                    {
-                        output.push(new_board);
-                    }
-                    if stop {
-                        break;
-                    }
-                }
-                stop = false;
-                for i in 0..current_ver {
-                    let mut new_board = *board;
-                    new_board.switch();
-                    let new_ver = current_ver - i;
-                    if new_board.is_occupied(current_hor, new_ver) {
-                        if !new_board.is_enemy(current_hor, new_ver, self.color) {
-                            break;
-                        } else {
-                            stop = true;
-                        }
-                    }
-                    if new_board
-                        .move_piece(current_hor, current_ver, current_hor, new_ver)
-                        .is_ok()
-                    {
-                        output.push(new_board);
-                    }
-                    if stop {
-                        break;
-                    }
-                }
-                stop = false;
-                for i in 1..8 - current_hor {
-                    let mut new_board = *board;
-                    new_board.switch();
-                    let new_hor = current_hor + i;
-                    if new_board.is_occupied(new_hor, current_ver) {
-                        if !new_board.is_enemy(new_hor, current_ver, self.color) {
-                            break;
-                        } else {
-                            stop = true;
-                        }
-                    }
-                    if new_board
-                        .move_piece(current_hor, current_ver, new_hor, current_ver)
-                        .is_ok()
-                    {
-                        output.push(new_board);
-                    }
-                    if stop {
-                        break;
-                    }
-                }
-                stop = false;
-                for i in 0..current_hor {
-                    let mut new_board = *board;
-                    new_board.switch();
-                    let new_hor = current_hor - i;
-                    if new_board.is_occupied(new_hor, current_ver) {
-                        if !new_board.is_enemy(new_hor, current_ver, self.color) {
-                            break;
-                        } else {
-                            stop = true;
-                        }
-                    }
-                    if new_board
-                        .move_piece(current_hor, current_ver, new_hor, current_ver)
-                        .is_ok()
-                    {
-                        output.push(new_board);
-                    }
-                    if stop {
-                        break;
                     }
                 }
             }
             PieceType::BISHOP => {
-                let mut stop_lu: bool = false;
-                let mut stop_ld: bool = false;
-                let mut stop_ru: bool = false;
-                let mut stop_rd: bool = false;
+                let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
 
-                for i in 1..8 {
-                    let ver_u = current_ver as isize + i as isize;
-                    let hor_l = current_hor as isize - i as isize;
-                    let ver_d = current_ver as isize - i as isize;
-                    let hor_r = current_hor as isize + i as isize;
+                for step in 0..8 {
+                    let mut count: usize = 0;
+                    for i in 1isize..2 {
+                        for j in 1isize..2 {
+                            if i == 0 || j == 0 {
+                                continue;
+                            }
 
-                    if !stop_lu {
-                        stop_lu = process_move(board, &mut output, current_hor, current_ver, hor_l, ver_u, self.color);
+                            if !stop[count] {
+                                stop[count] = process_move(
+                                    &mut board,
+                                    &mut output,
+                                    current_hor,
+                                    current_ver,
+                                    current_hor as isize + i * step,
+                                    current_ver as isize + j * step,
+                                    self.color,
+                                );
+                            }
+                            count += 1;
+                        }
                     }
+                }
+            }
+            PieceType::QUEEN => {
+                let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
 
-                    if !stop_ru {
-                        stop_ru = process_move(board, &mut output, current_hor, current_ver, hor_r, ver_u, self.color);
+                for step in 0..8 {
+                    let mut count: usize = 0;
+                    for i in 1isize..2 {
+                        for j in 1isize..2 {
+                            if i == 0 && j == 0 {
+                                continue;
+                            }
+
+                            if !stop[count] {
+                                stop[count] = process_move(
+                                    &mut board,
+                                    &mut output,
+                                    current_hor,
+                                    current_ver,
+                                    current_hor as isize + i * step,
+                                    current_ver as isize + j * step,
+                                    self.color,
+                                );
+                            }
+                            count += 1;
+                        }
                     }
+                }
+            }
+            PieceType::KING => {
+                for i in -1isize..2 {
+                    for j in -1isize..2 {
+                        if i == 0 && j == 0 {
+                            continue;
+                        }
 
-                    if !stop_ld {
-                        stop_ld = process_move(board, &mut output, current_hor, current_ver, hor_l, ver_d, self.color);
-                    }
-
-                    if !stop_rd {
-                        stop_rd = process_move(board, &mut output, current_hor, current_ver, hor_r, ver_d, self.color);
+                        process_move(
+                            &mut board,
+                            &mut output,
+                            current_hor,
+                            current_ver,
+                            current_hor as isize + i,
+                            current_ver as isize + j,
+                            self.color,
+                        );
                     }
                 }
             }
             PieceType::HORSE => {
                 let mut new_board = *board;
                 new_board.switch();
+                new_board.increment_turn();
                 output.push(new_board);
             }
             _ => {}
@@ -302,6 +303,7 @@ impl Piece {
 struct BoardState {
     board: [Option<Piece>; 64],
     turn_color: Color,
+    turn_number: usize,
 }
 
 impl BoardState {
@@ -309,7 +311,12 @@ impl BoardState {
         Self {
             board: [None; 64],
             turn_color,
+            turn_number: 0,
         }
+    }
+
+    fn increment_turn(&mut self) {
+        self.turn_number += 1;
     }
 
     fn add_piece(&mut self, hor: usize, ver: usize, piece: Piece) {
@@ -324,6 +331,19 @@ impl BoardState {
         match self.board[ver * 8 + hor] {
             Some(piece) => piece.color != color,
             None => false,
+        }
+    }
+
+    fn is_virgin(&self, hor: usize, ver: usize) -> bool {
+        match self.board[ver * 8 + hor] {
+            Some(piece) => piece.is_virgin(),
+            None => false,
+        }
+    }
+
+    fn unvirgin(&mut self, hor: usize, ver: usize) {
+        if let Some(piece) = self.board[ver * 8 + hor].as_mut() {
+            piece.unvirgin();
         }
     }
 
@@ -346,7 +366,7 @@ impl BoardState {
         score
     }
 
-    fn minimax(&self, depth: usize, maximizing: bool) -> isize {
+    fn minimax(&mut self, depth: usize, maximizing: bool) -> isize {
         if depth == 0 {
             return self.evaluate();
         }
@@ -357,31 +377,20 @@ impl BoardState {
             return self.evaluate();
         }
 
-        if maximizing {
-            let mut best = isize::MIN;
+        let mut best = match maximizing {
+            true => isize::MIN,
+            false => isize::MAX,
+        };
 
-            for mv in moves {
-                let score = mv.minimax(depth - 1, false);
+        for mut mv in moves {
+            let score = mv.minimax(depth - 1, !maximizing);
 
-                if score > best {
-                    best = score;
-                }
+            if score < best {
+                best = score;
             }
-
-            best
-        } else {
-            let mut best = isize::MAX;
-
-            for mv in moves {
-                let score = mv.minimax(depth - 1, true);
-
-                if score < best {
-                    best = score;
-                }
-            }
-
-            best
         }
+
+        best
     }
 
     fn move_piece(
@@ -398,9 +407,8 @@ impl BoardState {
             return Err("No piece at source position");
         }
 
-        let piece = self.board[from_index].take();
+        let mut piece = self.board[from_index].take();
         self.board[to_index] = piece;
-
         Ok(())
     }
 
@@ -411,7 +419,7 @@ impl BoardState {
         };
     }
 
-    fn generate_moves(&self) -> Vec<BoardState> {
+    fn generate_moves(&mut self) -> Vec<BoardState> {
         let mut moves = Vec::new();
 
         for ver in 0..8 {
@@ -425,18 +433,6 @@ impl BoardState {
         }
 
         moves
-    }
-
-    fn get_color(&self, hor: usize, ver: usize) -> Option<Color> {
-        let piece = self.board[ver * 8 + hor];
-        match piece {
-            Some(piece) => {
-                return Some(piece.get_color());
-            }
-            None => {
-                return None;
-            }
-        }
     }
 }
 
@@ -468,6 +464,8 @@ impl fmt::Display for BoardState {
 
         writeln!(f)?;
         writeln!(f, "Evaluation: {}", self.evaluate())?;
+        writeln!(f, "Color: {:?}", self.turn_color)?;
+        writeln!(f, "Turn: {}", self.turn_number)?;
 
         Ok(())
     }
@@ -479,38 +477,27 @@ fn main() {
         PieceType::TOWER,
         // PieceType::HORSE,
         PieceType::BISHOP,
-        // PieceType::QUEEN,
-        // PieceType::KING,
+        PieceType::QUEEN,
+        PieceType::KING,
         PieceType::BISHOP,
         // PieceType::HORSE,
         PieceType::TOWER,
     ];
 
     // White pieces
-    for i in 0..4 {
-        board.add_piece(i, 0, Piece::new(piece_types[i], Color::WHITE));
-
-        // board.add_piece(
-        //     i,
-        //     1,
-        //     Piece::new(PieceType::PAWN, Color::WHITE),
-        // );
+    for i in 0..1 {
+        // board.add_piece(i, 0, Piece::new(piece_types[i], Color::WHITE));
+        board.add_piece(i, 1, Piece::new(PieceType::PAWN, Color::WHITE));
     }
 
     // Black pieces
-    for i in 0..4 {
-        board.add_piece(i, 7, Piece::new(piece_types[i], Color::BLACK));
-
-        // board.add_piece(
-        //     i,
-        //     6,
-        //     Piece::new(PieceType::PAWN, Color::BLACK),
-        // );
+    for i in 0..1 {
+        // board.add_piece(i, 7, Piece::new(piece_types[i], Color::BLACK));
+        board.add_piece(i, 6, Piece::new(PieceType::PAWN, Color::BLACK));
     }
 
     let mut current = board;
-
-    for _ in 0..9 {
+    for _ in 0..99 {
         let mut moves = current.generate_moves();
         println!("{}", current);
 
@@ -520,13 +507,22 @@ fn main() {
         }
 
         let maximizing = current.turn_color == Color::WHITE;
+        let depth = match maximizing {
+            true => 1,
+            false => 1,
+        };
 
-        let best_index = moves
-            .iter()
-            .enumerate()
-            .max_by_key(|(_, board)| board.minimax(1, !maximizing))
-            .map(|(index, _)| index)
-            .unwrap();
+        let mut best_index = 0;
+        let mut best_score = isize::MIN;
+
+        for (index, board) in moves.iter_mut().enumerate() {
+            let score = board.minimax(depth, !maximizing);
+
+            if score > best_score {
+                best_score = score;
+                best_index = index;
+            }
+        }
 
         current = moves.swap_remove(best_index);
     }
