@@ -149,8 +149,8 @@ impl Piece {
         match self.piece_type {
             PieceType::PAWN => {
                 let new_ver = match self.color {
-                    Color::WHITE => current_ver + 1,
-                    Color::BLACK => current_ver - 1,
+                    Color::WHITE => current_ver as isize + 1,
+                    Color::BLACK => current_ver as isize - 1,
                 };
 
                 for i in -1isize..2 {
@@ -158,11 +158,11 @@ impl Piece {
                     let mut is_ok: bool = true;
                     if valid_pos(hor, new_ver as isize) {
                         if i != 0 {
-                            if !board.is_enemy(hor as usize, new_ver, self.color) {
+                            if !board.is_enemy(hor as usize, new_ver as usize, self.color) {
                                 is_ok = false;
                             }
                         } else {
-                            if board.is_occupied(hor as usize, new_ver) {
+                            if board.is_occupied(hor as usize, new_ver as usize) {
                                 is_ok = false;
                             }
                         }
@@ -208,10 +208,10 @@ impl Piece {
             PieceType::TOWER => {
                 let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
 
-                for step in 0..8 {
+                for step in 1..8 {
                     let mut count: usize = 0;
-                    for i in 1isize..2 {
-                        for j in 1isize..2 {
+                    for i in -1isize..2 {
+                        for j in -1isize..2 {
                             if i != 0 && j != 0 {
                                 continue;
                             }
@@ -235,10 +235,10 @@ impl Piece {
             PieceType::BISHOP => {
                 let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
 
-                for step in 0..8 {
+                for step in 1..8 {
                     let mut count: usize = 0;
-                    for i in 1isize..2 {
-                        for j in 1isize..2 {
+                    for i in -1isize..2 {
+                        for j in -1isize..2 {
                             if i == 0 || j == 0 {
                                 continue;
                             }
@@ -262,10 +262,10 @@ impl Piece {
             PieceType::QUEEN => {
                 let mut stop: [bool; 8] = [false, false, false, false, false, false, false, false];
 
-                for step in 0..8 {
+                for step in 1..8 {
                     let mut count: usize = 0;
-                    for i in 1isize..2 {
-                        for j in 1isize..2 {
+                    for i in -1isize..2 {
+                        for j in -1isize..2 {
                             if i == 0 && j == 0 {
                                 continue;
                             }
@@ -356,7 +356,7 @@ impl Piece {
                     let min = current_ver.min(target_ver);
                     let max = current_ver.max(target_ver);
 
-                    for i in min..max {
+                    for i in (min+1)..max {
                         if board.is_occupied(current_hor, i) {
                             return false;
                         }
@@ -367,7 +367,7 @@ impl Piece {
                     let min = current_hor.min(target_hor);
                     let max = current_hor.max(target_hor);
 
-                    for i in min..max {
+                    for i in (min+1)..max {
                         if board.is_occupied(i, current_ver) {
                             return false;
                         }
@@ -380,17 +380,19 @@ impl Piece {
             }
             PieceType::BISHOP => {
                 if (current_ver as isize - target_ver as isize).abs() == (current_hor as isize - target_hor as isize).abs() {
-                    let min_hor = current_hor.min(target_hor);
-                    let max_hor = current_hor.max(target_hor);
-                    let min_ver = current_ver.min(target_ver);
-                    let max_ver = current_ver.max(target_ver);
+                    let dx: isize = if target_hor > current_hor { 1 } else { -1 };
+                    let dy: isize = if target_ver > current_ver { 1 } else { -1 };
 
-                    for i in min_hor..max_hor {
-                        for j in min_ver..max_ver {
-                            if board.is_occupied(i, j) {
-                                return false;
-                            }
+                    let mut x = current_hor as isize + dx;
+                    let mut y = current_ver as isize + dy;
+
+                    while x != target_hor as isize {
+                        if board.is_occupied(x as usize, y as usize) {
+                            return false;
                         }
+
+                        x += dx;
+                        y += dy;
                     }
 
                     return true;
@@ -403,7 +405,7 @@ impl Piece {
                     let min = current_ver.min(target_ver);
                     let max = current_ver.max(target_ver);
 
-                    for i in min..max {
+                    for i in (min+1)..max {
                         if board.is_occupied(current_hor, i) {
                             return false;
                         }
@@ -414,7 +416,7 @@ impl Piece {
                     let min = current_hor.min(target_hor);
                     let max = current_hor.max(target_hor);
 
-                    for i in min..max {
+                    for i in (min+1)..max {
                         if board.is_occupied(i, current_ver) {
                             return false;
                         }
@@ -422,17 +424,19 @@ impl Piece {
 
                     return true;
                 } else if (current_ver as isize - target_ver as isize).abs() as usize == (current_hor as isize - target_hor as isize).abs() as usize {
-                    let min_hor = current_hor.min(target_hor);
-                    let max_hor = current_hor.max(target_hor);
-                    let min_ver = current_ver.min(target_ver);
-                    let max_ver = current_ver.max(target_ver);
+                    let dx: isize = if target_hor > current_hor { 1 } else { -1 };
+                    let dy: isize = if target_ver > current_ver { 1 } else { -1 };
 
-                    for i in min_hor..max_hor {
-                        for j in min_ver..max_ver {
-                            if board.is_occupied(i, j) {
-                                return false;
-                            }
+                    let mut x = current_hor as isize + dx;
+                    let mut y = current_ver as isize + dy;
+
+                    while x != target_hor as isize {
+                        if board.is_occupied(x as usize, y as usize) {
+                            return false;
                         }
+
+                        x += dx;
+                        y += dy;
                     }
 
                     return true;
@@ -503,8 +507,8 @@ impl BoardState {
         let king_hor = king_pos % 8;
         let king_ver = king_pos / 8;
 
-        for hor in 0..8 {
-            for ver in 0..8 {
+        for hor in 1..8 {
+            for ver in 1..8 {
                 let index = ver * 8 + hor;
                 match self.board[index] {
                     Some(piece) => {
@@ -734,7 +738,7 @@ fn main() {
     
     let mut winner: Color = Color::WHITE;
     let mut current = board;
-    for _ in 0..60 {
+    for _ in 0..999 {
         let mut moves = current.generate_moves();
 
         if moves.is_empty() {
@@ -745,7 +749,7 @@ fn main() {
         let maximizing = current.turn_color == Color::WHITE;
         let depth = match maximizing {
             true => 1,
-            false => 1,
+            false => 3,
         };
 
         let mut best_index = 0;
