@@ -35,7 +35,9 @@ fn check_break(board: &BoardState, hor: usize, ver: usize, color: Color) -> (boo
     if board.is_occupied(hor, ver) {
         if !board.is_enemy(hor, ver, color) {
             stop_now = true;
+            stop_next = true;
         } else {
+            stop_now = false;
             stop_next = true;
         }
     }
@@ -95,6 +97,10 @@ impl Piece {
             color,
             is_virgin_status: true,
         }
+    }
+
+    fn get_piece_type(&self) -> &PieceType {
+        return &self.piece_type
     }
 
     fn get_symbol(&self) -> char {
@@ -326,8 +332,8 @@ impl Piece {
         match self.piece_type {
             PieceType::PAWN => {
                 let new_ver: isize = match self.color {
-                    Color::WHITE => { current_ver as isize + 2 }
-                    Color::BLACK => { current_ver as isize - 2 }
+                    Color::WHITE => { current_ver as isize + 1 }
+                    Color::BLACK => { current_ver as isize - 1 }
                 };
 
                 for i in [-1, 1] {
@@ -349,6 +355,8 @@ impl Piece {
                             return false;
                         }
                     }
+
+                    return true;
                 } else if current_ver == target_ver {
                     let min = current_hor.min(target_hor);
                     let max = current_hor.max(target_hor);
@@ -358,9 +366,11 @@ impl Piece {
                             return false;
                         }
                     }
+
+                    return true;
                 }
 
-                true
+                false
             }
             PieceType::BISHOP => {
                 if (current_ver as isize - target_ver as isize).abs() == (current_hor as isize - target_hor as isize).abs() {
@@ -376,8 +386,11 @@ impl Piece {
                             }
                         }
                     }
+
+                    return true;
                 }
-                true
+
+                false
             }
             PieceType::QUEEN => {
                 if current_hor == target_hor {
@@ -389,6 +402,8 @@ impl Piece {
                             return false;
                         }
                     }
+
+                    return false;
                 } else if current_ver == target_ver {
                     let min = current_hor.min(target_hor);
                     let max = current_hor.max(target_hor);
@@ -398,6 +413,8 @@ impl Piece {
                             return false;
                         }
                     }
+
+                    return true;
                 } else if (current_ver as isize - target_ver as isize).abs() as usize == (current_hor as isize - target_hor as isize).abs() as usize {
                     let min_hor = current_hor.min(target_hor);
                     let max_hor = current_hor.max(target_hor);
@@ -411,8 +428,11 @@ impl Piece {
                             }
                         }
                     }
+
+                    return true;
                 }
-                true
+                
+                false
             }
             PieceType::HORSE => {
                 for i in [-2, 2] {
@@ -430,12 +450,14 @@ impl Piece {
                         }
                     } 
                 }
+
                 false
             }
             PieceType::KING => {
-                if (current_hor as isize - target_hor as isize).abs() <= 1 || (current_ver as isize - target_ver as isize).abs() <= 1 {
+                if (current_hor as isize - target_hor as isize).abs() <= 1 && (current_ver as isize - target_ver as isize).abs() <= 1 {
                     return true;
                 }
+
                 false
             }
         }
@@ -447,6 +469,8 @@ struct BoardState {
     board: [Option<Piece>; 64],
     turn_color: Color,
     turn_number: usize,
+    white_king_pos: usize,
+    black_king_pos: usize,
 }
 
 impl BoardState {
@@ -455,11 +479,39 @@ impl BoardState {
             board: [None; 64],
             turn_color,
             turn_number: 0,
+            white_king_pos: 65,
+            black_king_pos: 65,
         }
     }
 
     fn is_king_in_danger(&self) -> bool {
-        true
+        let king_pos = match self.turn_color {
+            Color::WHITE => { self.white_king_pos }
+            Color::BLACK => { self.black_king_pos }
+        };
+
+        if king_pos > 65 {
+            return true;
+        }
+
+        let king_hor = king_pos % 8;
+        let king_ver = king_pos / 8;
+
+        for hor in 0..8 {
+            for ver in 0..8 {
+                let index = ver * 8 + hor;
+                match self.board[index] {
+                    Some(piece) => {
+                        if self.is_enemy(hor, ver, self.turn_color) && piece.is_dangerous(&self, hor, ver, king_hor, king_ver) {
+                            return true;
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+
+        false
     }
 
     fn increment_turn(&mut self) {
@@ -468,6 +520,12 @@ impl BoardState {
 
     fn add_piece(&mut self, hor: usize, ver: usize, piece: Piece) {
         self.board[ver * 8 + hor] = Some(piece);
+        if *piece.get_piece_type() == PieceType::KING {
+            match piece.get_color() {
+                Color::WHITE => { self.white_king_pos = ver * 8 + hor; }
+                Color::BLACK => { self.black_king_pos = ver * 8 + hor; }
+            }
+        }
     }
 
     fn is_occupied(&self, hor: usize, ver: usize) -> bool {
@@ -500,12 +558,8 @@ impl BoardState {
         for square in self.board {
             if let Some(piece) = square {
                 match piece.color {
-                    Color::WHITE => {
-                        score += piece.get_score();
-                    }
-                    Color::BLACK => {
-                        score -= piece.get_score();
-                    }
+                    Color::WHITE => { score += piece.get_score(); }
+                    Color::BLACK => { score -= piece.get_score(); }
                 }
             }
         }
@@ -550,11 +604,23 @@ impl BoardState {
         let from_index = from_ver * 8 + from_hor;
         let to_index = to_ver * 8 + to_hor;
 
-        if self.board[from_index].is_none() {
-            return Err("No piece at source position");
+        let piece = self.board[from_index];
+        match piece {
+            Some(piece) => {
+                let piece_type = piece.get_piece_type();
+
+                if *piece_type == PieceType::KING {
+                    let piece_color = piece.get_color();
+                    match piece_color {
+                        Color::WHITE => { self.white_king_pos = to_index; }
+                        Color::BLACK => { self.black_king_pos = to_index; }
+                    }
+                }
+            }
+            None => { return Err("No piece here"); }
         }
 
-        let mut piece = self.board[from_index].take();
+        let piece = self.board[from_index].take();
         self.board[to_index] = piece;
 
         if self.is_king_in_danger() {
@@ -618,6 +684,8 @@ impl fmt::Display for BoardState {
         writeln!(f, "Evaluation: {}", self.evaluate())?;
         writeln!(f, "Color: {:?}", self.turn_color)?;
         writeln!(f, "Turn: {}", self.turn_number)?;
+        writeln!(f, "White king: {} {}", self.white_king_pos % 8, self.white_king_pos / 8);
+        writeln!(f, "Black king: {} {}", self.black_king_pos % 8, self.black_king_pos / 8);
 
         Ok(())
     }
@@ -648,8 +716,6 @@ fn main() {
         board.add_piece(i, 6, Piece::new(PieceType::PAWN, Color::BLACK));
     }
     
-    board.add_piece(3, 4, Piece::new(PieceType::HORSE, Color::WHITE));
-
     let mut current = board;
     for _ in 0..999 {
         let mut moves = current.generate_moves();
