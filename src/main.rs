@@ -71,8 +71,6 @@ fn process_move(
         let ver = ver as usize;
 
         let mut new_board = *board;
-        new_board.switch();
-        new_board.increment_turn();
 
         let (stop_now, stop_next) = check_break(&new_board, hor, ver, color);
 
@@ -81,12 +79,15 @@ fn process_move(
                 .move_piece(current_hor, current_ver, hor, ver)
                 .is_ok()
         {
+            new_board.switch();
+            new_board.increment_turn();
             new_board.unvirgin(hor, ver);
             output.push(new_board);
         }
 
         return stop_next;
     }
+
     false
 }
 
@@ -181,12 +182,17 @@ impl Piece {
                 }
 
                 if self.is_virgin_status {
+                    let new_iver: isize = match self.color {
+                        Color::WHITE => { current_ver as isize + 1 }
+                        Color::BLACK => { current_ver as isize - 1 }
+                    };
+
                     let new_ver: isize = match self.color {
                         Color::WHITE => { current_ver as isize + 2 }
                         Color::BLACK => { current_ver as isize - 2 }
                     };
 
-                    if valid_pos(current_hor as isize, new_ver) && !board.is_occupied(current_hor, new_ver as usize) {
+                    if valid_pos(current_hor as isize, new_ver) && !board.is_occupied(current_hor, new_ver as usize) && !board.is_occupied(current_hor, new_iver as usize) {
                         process_move(
                             &mut board,
                             &mut output,
@@ -328,7 +334,7 @@ impl Piece {
         output
     }
 
-    fn is_dangerous(&self, board: &BoardState, current_hor: usize, current_ver: usize, target_hor: usize, target_ver: usize) -> bool {
+    fn is_checking(&self, board: &BoardState, current_hor: usize, current_ver: usize, target_hor: usize, target_ver: usize) -> bool {
         match self.piece_type {
             PieceType::PAWN => {
                 let new_ver: isize = match self.color {
@@ -439,13 +445,13 @@ impl Piece {
                     for j in [-1, 1] {
                         let hor = current_hor as isize + i;
                         let ver = current_ver as isize + j;
-                        if valid_pos(hor, ver) && current_hor == hor as usize && current_ver == ver as usize {
+                        if valid_pos(hor, ver) && target_hor == hor as usize && target_ver == ver as usize {
                             return true;
                         }
 
                         let hor = current_hor as isize + j;
                         let ver = current_ver as isize + i;
-                        if valid_pos(hor, ver) && current_hor == hor as usize && current_ver == ver as usize {
+                        if valid_pos(hor, ver) && target_hor == hor as usize && target_ver == ver as usize {
                             return true;
                         }
                     } 
@@ -484,7 +490,7 @@ impl BoardState {
         }
     }
 
-    fn is_king_in_danger(&self) -> bool {
+    fn is_king_checked(&self) -> bool {
         let king_pos = match self.turn_color {
             Color::WHITE => { self.white_king_pos }
             Color::BLACK => { self.black_king_pos }
@@ -502,7 +508,7 @@ impl BoardState {
                 let index = ver * 8 + hor;
                 match self.board[index] {
                     Some(piece) => {
-                        if self.is_enemy(hor, ver, self.turn_color) && piece.is_dangerous(&self, hor, ver, king_hor, king_ver) {
+                        if self.is_enemy(hor, ver, self.turn_color) && piece.is_checking(&self, hor, ver, king_hor, king_ver) {
                             return true;
                         }
                     }
@@ -550,6 +556,10 @@ impl BoardState {
         if let Some(piece) = self.board[ver * 8 + hor].as_mut() {
             piece.unvirgin();
         }
+    }
+
+    fn get_turn_color(&self) -> Color {
+        return self.turn_color.clone();
     }
 
     fn evaluate(&self) -> isize {
@@ -623,8 +633,8 @@ impl BoardState {
         let piece = self.board[from_index].take();
         self.board[to_index] = piece;
 
-        if self.is_king_in_danger() {
-            return Err("King is threatened");
+        if self.is_king_checked() {
+            return Err("King is checked");
         }
 
         Ok(())
@@ -682,10 +692,14 @@ impl fmt::Display for BoardState {
 
         writeln!(f)?;
         writeln!(f, "Evaluation: {}", self.evaluate())?;
-        writeln!(f, "Color: {:?}", self.turn_color)?;
+        match self.turn_color {
+            Color::WHITE => writeln!(f, "Move by: BLACK")?,
+            Color::BLACK => writeln!(f, "Move by: WHITE")?,
+        }
         writeln!(f, "Turn: {}", self.turn_number)?;
-        writeln!(f, "White king: {} {}", self.white_king_pos % 8, self.white_king_pos / 8);
-        writeln!(f, "Black king: {} {}", self.black_king_pos % 8, self.black_king_pos / 8);
+        // writeln!(f, "White king: {} {}", self.white_king_pos % 8, self.white_king_pos / 8);
+        // writeln!(f, "Black king: {} {}", self.black_king_pos % 8, self.black_king_pos / 8);
+        writeln!(f, "-------------------");
 
         Ok(())
     }
@@ -715,14 +729,16 @@ fn main() {
         board.add_piece(i, 7, Piece::new(piece_types[i], Color::BLACK));
         board.add_piece(i, 6, Piece::new(PieceType::PAWN, Color::BLACK));
     }
+   
+    println!("{}", board);
     
+    let mut winner: Color = Color::WHITE;
     let mut current = board;
-    for _ in 0..999 {
+    for _ in 0..60 {
         let mut moves = current.generate_moves();
-        println!("{}", current);
 
         if moves.is_empty() {
-            println!("No moves left.");
+            println!("{:?} WINS", winner);
             break;
         }
 
@@ -744,6 +760,8 @@ fn main() {
             }
         }
 
+        winner = current.get_turn_color();
         current = moves.swap_remove(best_index);
+        println!("{}", current);
     }
 }
