@@ -411,7 +411,7 @@ impl Piece {
                         }
                     }
 
-                    return false;
+                    return true;
                 } else if current_ver == target_ver {
                     let min = current_hor.min(target_hor);
                     let max = current_hor.max(target_hor);
